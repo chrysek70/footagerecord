@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 3.24)
-project(FootageRecord LANGUAGES CXX)
+project(FootageRecord LANGUAGES CXX RC)
 if(NOT WIN32)
   message(FATAL_ERROR "Footage Record for Windows requires the Windows SDK and MSVC.")
 endif()
 # Static runtime: no separate VC++ redistributable to install.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 add_compile_definitions(UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-add_compile_options(/W4 /permissive- /EHsc /utf-8)
+add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/W4> $<$<COMPILE_LANGUAGE:CXX>:/permissive-> $<$<COMPILE_LANGUAGE:CXX>:/EHsc> $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
 
-add_executable(FootageRecord WIN32 src/main.cpp src/recorder.cpp app.manifest)
+add_executable(FootageRecord WIN32 src/main.cpp src/recorder.cpp resources/app.rc app.manifest)
 target_compile_features(FootageRecord PRIVATE cxx_std_20)
 target_link_libraries(FootageRecord PRIVATE d3d11 dxgi windowsapp mfplat mfreadwrite mfuuid shell32 shlwapi ole32)
 install(TARGETS FootageRecord RUNTIME DESTINATION .)

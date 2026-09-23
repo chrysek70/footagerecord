@@ -25,6 +25,7 @@ enum class Phase { Ready, Choosing, Countdown, Recording, Stopping, Saved };
 constexpr int PrimaryID = 100, FolderID = 101, AnotherID = 102;  // Cancel uses IDCANCEL, so Esc works
 constexpr UINT TrayMessage = WM_APP + 2;
 constexpr UINT_PTR CountdownTimer = 1, ClockTimer = 2, StartTimer = 3;
+constexpr int AppIcon = 1;  // resources/app.rc
 constexpr UINT TrayStop = 200, TrayCancel = 201, TrayShow = 202, TrayQuit = 203;
 
 struct App {
@@ -405,7 +406,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     klass.lpfnWndProc = WindowProc;
     klass.lpszClassName = L"FootageRecord";
     klass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    klass.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    klass.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(AppIcon));
     klass.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
     RegisterClassW(&klass);
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
@@ -439,7 +440,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     app->tray.uID = 1;
     app->tray.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     app->tray.uCallbackMessage = TrayMessage;
-    app->tray.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    app->tray.hIcon = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(AppIcon), IMAGE_ICON,
+        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0));
     wcscpy_s(app->tray.szTip, L"Footage Record");
     Shell_NotifyIconW(NIM_ADD, &app->tray);
 
