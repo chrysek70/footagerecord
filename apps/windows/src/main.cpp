@@ -23,6 +23,8 @@ using namespace winrt::Windows::Graphics::Capture;
 namespace {
 enum class Phase { Ready, Choosing, Countdown, Recording, Stopping, Saved };
 constexpr int PrimaryID = 100, FolderID = 101, AnotherID = 102;  // Cancel uses IDCANCEL, so Esc works
+constexpr int SourceAudioID = 103, MicrophoneID = 104;
+constexpr wchar_t SettingsKey[] = L"Software\\Footage Record";
 constexpr UINT TrayMessage = WM_APP + 2;
 constexpr UINT_PTR CountdownTimer = 1, ClockTimer = 2, StartTimer = 3;
 constexpr int AppIcon = 1;  // resources/app.rc
@@ -30,12 +32,14 @@ constexpr UINT TrayStop = 200, TrayCancel = 201, TrayShow = 202, TrayQuit = 203;
 
 struct App {
     HWND window{}, title{}, detail{}, big{}, primary{}, cancel{}, folderButton{}, another{}, message{}, footer{};
+    HWND sourceAudio{}, microphone{};
     HFONT titleFont{}, bodyFont{}, bigFont{}, smallFont{};
     NOTIFYICONDATAW tray{};
     Phase phase = Phase::Ready;
     int countdown = 0;
     WPARAM generation = 0;
     GraphicsCaptureItem item{nullptr};
+    DWORD itemProcess = 0;  // the chosen window's app, when it can be identified
     std::shared_ptr<Recorder> recorder;
     fs::path folder, temp, saved, unfinished;
     ULONGLONG recordingSince = 0;
@@ -65,6 +69,8 @@ void Layout() {
     place(app->detail, app->bodyFont, 28, 110, 374, 56);
     place(app->big, app->bigFont, 28, 168, 374, 76);
     place(app->primary, app->bodyFont, 28, 252, 374, 40);
+    place(app->sourceAudio, app->bodyFont, 28, 302, 374, 26);
+    place(app->microphone, app->bodyFont, 28, 332, 374, 26);
     place(app->cancel, app->bodyFont, 28, 302, 180, 34);
     place(app->folderButton, app->bodyFont, 222, 302, 180, 34);
     place(app->another, app->bodyFont, 28, 346, 180, 30);
@@ -93,6 +99,8 @@ void Render() {
     show(app->cancel, phase == Phase::Countdown);
     show(app->folderButton, phase == Phase::Saved);
     show(app->another, phase == Phase::Saved);
+    show(app->sourceAudio, phase == Phase::Ready || phase == Phase::Choosing);
+    show(app->microphone, phase == Phase::Ready || phase == Phase::Choosing);
     EnableWindow(app->primary, phase != Phase::Choosing);
     switch (phase) {
     case Phase::Ready:
@@ -137,6 +145,37 @@ void Render() {
     show(app->message, !note.empty());
 }
 
+bool Setting(wchar_t const* name, bool fallback) {
+    DWORD value = 0, size = sizeof(value);
+    if (RegGetValueW(HKEY_CURRENT_USER, SettingsKey, name, RRF_RT_REG_DWORD, nullptr, &value, &size) != ERROR_SUCCESS)
+        return fallback;
+    return value != 0;
+}
+
+void SaveSetting(wchar_t const* name, bool on) {
+    DWORD value = on ? 1 : 0;
+    RegSetKeyValueW(HKEY_CURRENT_USER, SettingsKey, name, REG_DWORD, &value, sizeof(value));
+}
+
+bool Checked(HWND box) { return SendMessageW(box, BM_GETCHECK, 0, 0) == BST_CHECKED; }
+
+// The Windows picker doesn't say which app owns a window, so match its title among visible
+// windows. Returns 0 (record all computer sound) for screens and ambiguous titles.
+DWORD WindowProcess(std::wstring const& title) {
+    struct Search { std::wstring const* title; DWORD process = 0; bool ambiguous = false; } search{&title};
+    EnumWindows([](HWND window, LPARAM parameter) -> BOOL {
+        auto& found = *reinterpret_cast<Search*>(parameter);
+        wchar_t text[512]{};
+        if (!IsWindowVisible(window) || !GetWindowTextW(window, text, 512) || *found.title != text) return TRUE;
+        DWORD process = 0;
+        GetWindowThreadProcessId(window, &process);
+        if (found.process && found.process != process) found.ambiguous = true;
+        found.process = process;
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&search));
+    return search.ambiguous || title.empty() ? 0 : search.process;
+}
+
 void Fail(std::wstring const& description) {
     KillTimer(app->window, ClockTimer);
     KillTimer(app->window, StartTimer);
@@ -167,7 +206,11 @@ void BeginRecording() {
         // Hide first so a whole-screen recording never shows this window.
         ShowWindow(app->window, SW_HIDE);
         app->recorder = std::make_shared<Recorder>(app->window, ++app->generation);
-        app->recorder->Start(app->item, app->temp, true);
+        AudioOptions audio;
+        audio.source = Checked(app->sourceAudio);
+        audio.processId = app->itemProcess;
+        audio.microphone = Checked(app->microphone);
+        app->recorder->Start(app->item, app->temp, true, audio);
         app->phase = Phase::Recording;
         app->recordingSince = 0;
         SetTimer(app->window, ClockTimer, 1000, nullptr);
@@ -255,6 +298,7 @@ fire_and_forget Choose() {
     owner->phase = Phase::Ready;
     if (item) {
         owner->item = item;
+        owner->itemProcess = WindowProcess(std::wstring(item.DisplayName()));
         StartCountdown();
     } else {
         Render();
@@ -307,6 +351,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         case AnotherID:
             app->phase = Phase::Ready;
             Render();
+            break;
+        case SourceAudioID:
+            SaveSetting(L"SourceAudio", Checked(app->sourceAudio));
+            break;
+        case MicrophoneID:
+            SaveSetting(L"Microphone", Checked(app->microphone));
             break;
         case TrayStop: StopRecording(); break;
         case TrayShow: ShowWindowNow(); break;
@@ -429,10 +479,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     app->another = child(L"BUTTON", WS_TABSTOP | BS_PUSHBUTTON, AnotherID);
     app->message = child(L"STATIC", 0, 0);
     app->footer = child(L"STATIC", 0, 0);
+    app->sourceAudio = child(L"BUTTON", WS_TABSTOP | BS_AUTOCHECKBOX, SourceAudioID);
+    app->microphone = child(L"BUTTON", WS_TABSTOP | BS_AUTOCHECKBOX, MicrophoneID);
+    SetWindowTextW(app->sourceAudio, L"Sound from what you record");
+    SetWindowTextW(app->microphone, L"Microphone");
+    SendMessageW(app->sourceAudio, BM_SETCHECK, Setting(L"SourceAudio", true) ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessageW(app->microphone, BM_SETCHECK, Setting(L"Microphone", false) ? BST_CHECKED : BST_UNCHECKED, 0);
     SetWindowTextW(app->cancel, L"Cancel");
     SetWindowTextW(app->folderButton, L"Show in folder");
     SetWindowTextW(app->another, L"Record another");
-    SetWindowTextW(app->footer, L"MP4 · original size · 30 fps · no sound yet\r\nSaved in Videos\\Footage Record. Only on this PC.");
+    SetWindowTextW(app->footer, L"MP4 · original size · 30 fps · AAC sound\r\nSaved in Videos\\Footage Record. Only on this PC.");
     Layout();
 
     app->tray.cbSize = sizeof(app->tray);

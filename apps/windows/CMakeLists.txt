@@ -8,9 +8,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 add_compile_definitions(UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/W4> $<$<COMPILE_LANGUAGE:CXX>:/permissive-> $<$<COMPILE_LANGUAGE:CXX>:/EHsc> $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
 
-add_executable(FootageRecord WIN32 src/main.cpp src/recorder.cpp resources/app.rc app.manifest)
+add_executable(FootageRecord WIN32 src/main.cpp src/recorder.cpp src/audio.cpp resources/app.rc app.manifest)
 target_compile_features(FootageRecord PRIVATE cxx_std_20)
-target_link_libraries(FootageRecord PRIVATE d3d11 dxgi windowsapp mfplat mfreadwrite mfuuid shell32 shlwapi ole32)
+target_link_libraries(FootageRecord PRIVATE d3d11 dxgi windowsapp mfplat mfreadwrite mfuuid mmdevapi shell32 shlwapi ole32 advapi32)
 install(TARGETS FootageRecord RUNTIME DESTINATION .)
 
 enable_testing()

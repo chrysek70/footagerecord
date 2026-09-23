@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include "audio.h"
 #include "recording.h"
 
 // Posted to the UI window: wParam = recording generation, lParam = RecorderEvent.
@@ -24,7 +25,7 @@ public:
     Recorder(HWND notify, WPARAM generation) : notify_(notify), generation_(generation) {}
     ~Recorder();
     void Start(winrt::Windows::Graphics::Capture::GraphicsCaptureItem const& item,
-               std::filesystem::path const& file, bool showCursor);
+               std::filesystem::path const& file, bool showCursor, AudioOptions const& audio);
     // Ends capture and finishes the file on a worker thread, then posts Finished or Failed.
     void Stop();
     double Duration() const;
@@ -35,6 +36,7 @@ private:
     void Encode(ID3D11Texture2D* frame, winrt::Windows::Graphics::SizeInt32 content, int64_t time);
     void CreateProcessor(UINT width, UINT height);
     void WriteSample(ID3D11Texture2D* nv12, int64_t time);
+    void WriteAudio(int16_t const* frames, size_t count, int64_t firstFrame);
     void Finish();
     void CloseCapture() noexcept;
     void Fail(std::wstring const& message);
@@ -66,6 +68,8 @@ private:
     winrt::com_ptr<IMFDXGIDeviceManager> manager_;
     winrt::com_ptr<IMFSinkWriter> writer_;
     DWORD stream_ = 0;
+    DWORD audioStream_ = 0;
+    AudioMixer audio_;
 
     winrt::Windows::Graphics::DirectX::Direct3D11::IDirect3DDevice device_{nullptr};
     winrt::Windows::Graphics::Capture::GraphicsCaptureItem item_{nullptr};

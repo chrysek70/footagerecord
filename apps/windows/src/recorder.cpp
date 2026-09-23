@@ -6,6 +6,7 @@
 #include <windows.graphics.directx.direct3d11.interop.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Graphics.DirectX.h>
+#include <cstring>
 #include <thread>
 #include <utility>
 
@@ -39,12 +40,32 @@ com_ptr<IMFMediaType> VideoType(GUID subtype, PixelSize size) {
     check_hresult(type->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235));
     return type;
 }
+
+// 48 kHz stereo: 16-bit PCM in, AAC at 192 kbps out.
+com_ptr<IMFMediaType> AudioType(GUID subtype) {
+    com_ptr<IMFMediaType> type;
+    check_hresult(MFCreateMediaType(type.put()));
+    check_hresult(type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio));
+    check_hresult(type->SetGUID(MF_MT_SUBTYPE, subtype));
+    check_hresult(type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16));
+    check_hresult(type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, AudioRate));
+    check_hresult(type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, 2));
+    if (subtype == MFAudioFormat_AAC) {
+        check_hresult(type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 24000));
+    } else {
+        check_hresult(type->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, 4));
+        check_hresult(type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, AudioRate * 4));
+    }
+    return type;
+}
 }  // namespace
 
 Recorder::~Recorder() { CloseCapture(); }
 
-void Recorder::Start(GraphicsCaptureItem const& item, std::filesystem::path const& file, bool showCursor) {
+void Recorder::Start(GraphicsCaptureItem const& item, std::filesystem::path const& file, bool showCursor,
+                     AudioOptions const& audio) {
     file_ = file;
+    audio_.Open(audio);  // first, so a microphone or sound problem stops us before anything is written
     check_hresult(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
         D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT, nullptr, 0,
         D3D11_SDK_VERSION, d3d_.put(), nullptr, context_.put()));
@@ -64,16 +85,22 @@ void Recorder::Start(GraphicsCaptureItem const& item, std::filesystem::path cons
     check_hresult(MFCreateDXGIDeviceManager(&token, manager_.put()));
     check_hresult(manager_->ResetDevice(d3d_.get(), token));
     com_ptr<IMFAttributes> attributes;
-    check_hresult(MFCreateAttributes(attributes.put(), 3));
+    check_hresult(MFCreateAttributes(attributes.put(), 4));
     check_hresult(attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, manager_.get()));
     check_hresult(attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, TRUE));
     check_hresult(attributes->SetGUID(MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_MPEG4));
+    // Video pauses while the screen is still, but sound keeps coming: never block one on the other.
+    check_hresult(attributes->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, TRUE));
     check_hresult(MFCreateSinkWriterFromURL(file.c_str(), nullptr, attributes.get(), writer_.put()));
     auto output = VideoType(MFVideoFormat_H264, size_);
     auto bitrate = std::clamp<long long>(2LL * size_.width * size_.height, 1'500'000, 24'000'000);
     check_hresult(output->SetUINT32(MF_MT_AVG_BITRATE, static_cast<UINT32>(bitrate)));
     check_hresult(writer_->AddStream(output.get(), &stream_));
     check_hresult(writer_->SetInputMediaType(stream_, VideoType(MFVideoFormat_NV12, size_).get(), nullptr));
+    if (audio_.Enabled()) {
+        check_hresult(writer_->AddStream(AudioType(MFAudioFormat_AAC).get(), &audioStream_));
+        check_hresult(writer_->SetInputMediaType(audioStream_, AudioType(MFAudioFormat_PCM).get(), nullptr));
+    }
     check_hresult(writer_->BeginWriting());
 
     item_ = item;
@@ -93,6 +120,11 @@ void Recorder::Start(GraphicsCaptureItem const& item, std::filesystem::path cons
     session_ = pool_.CreateCaptureSession(item_);
     session_.IsCursorCaptureEnabled(showCursor);
     session_.StartCapture();
+    if (audio_.Enabled()) {
+        audio_.Start([weak](int16_t const* frames, size_t count, int64_t first) {
+            if (auto self = weak.lock()) self->WriteAudio(frames, count, first);
+        });
+    }
 }
 
 void Recorder::OnFrame(Direct3D11CaptureFramePool const& sender) {
@@ -105,6 +137,7 @@ void Recorder::OnFrame(Direct3D11CaptureFramePool const& sender) {
     if (start_ < 0) {
         start_ = captured;
         clockOffset_ = NowTicks() - captured;
+        audio_.SetZero(start_ + clockOffset_);  // sound and video share this zero
     }
     int64_t time = captured - start_;
     // At most 30 frames per second. The capture API only sends frames when something changes.
@@ -233,6 +266,29 @@ void Recorder::WriteSample(ID3D11Texture2D* nv12, int64_t time) {
     check_hresult(writer_->WriteSample(stream_, sample.get()));
 }
 
+void Recorder::WriteAudio(int16_t const* frames, size_t count, int64_t firstFrame) {
+    try {
+        std::scoped_lock lock(mutex_);
+        if (!writer_) return;
+        auto bytes = static_cast<DWORD>(count * 2 * sizeof(int16_t));
+        com_ptr<IMFMediaBuffer> buffer;
+        check_hresult(MFCreateMemoryBuffer(bytes, buffer.put()));
+        BYTE* target = nullptr;
+        check_hresult(buffer->Lock(&target, nullptr, nullptr));
+        memcpy(target, frames, bytes);
+        check_hresult(buffer->Unlock());
+        check_hresult(buffer->SetCurrentLength(bytes));
+        com_ptr<IMFSample> sample;
+        check_hresult(MFCreateSample(sample.put()));
+        check_hresult(sample->AddBuffer(buffer.get()));
+        check_hresult(sample->SetSampleTime(firstFrame * 10'000'000 / AudioRate));
+        check_hresult(sample->SetSampleDuration(static_cast<int64_t>(count) * 10'000'000 / AudioRate));
+        check_hresult(writer_->WriteSample(audioStream_, sample.get()));
+    } catch (hresult_error const& error) {
+        Fail(L"Recording sound failed: " + std::wstring(error.message()));
+    }
+}
+
 void Recorder::Stop() {
     {
         std::scoped_lock lock(mutex_);
@@ -246,6 +302,8 @@ void Recorder::Stop() {
 
 void Recorder::Finish() {
     init_apartment(apartment_type::multi_threaded);
+    // Sound first, outside the lock: its last samples are written through WriteAudio.
+    audio_.Stop(stopTicks_);
     std::wstring failure;
     try {
         std::scoped_lock lock(mutex_);
