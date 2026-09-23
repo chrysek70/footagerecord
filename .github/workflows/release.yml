@@ -1,0 +1,27 @@
+name: Release
+# Push a tag like v0.1.0 to publish a GitHub Release with the built apps.
+# The private footagerecord.com repo mirrors the latest release onto the web server.
+# Windows joins the release once it is a real recorder, not the capture check.
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  macos:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test recording rules
+        run: swift test --package-path apps/macos
+      - name: Build app
+        run: CONFIGURATION=release ./scripts/build-macos.sh
+      - name: Archive app
+        run: ditto -c -k --keepParent 'dist/Footage Record.app' "dist/FootageRecord-macOS-${GITHUB_REF_NAME}.zip"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "dist/FootageRecord-macOS-${GITHUB_REF_NAME}.zip" \
+            --title "Footage Record $GITHUB_REF_NAME" \
+            --notes "Development build. The Mac app is ad-hoc signed, not notarized."

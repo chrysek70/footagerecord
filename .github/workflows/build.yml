@@ -1,0 +1,31 @@
+name: Desktop builds
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test recording rules
+        run: swift test --package-path apps/macos
+      - name: Build development app
+        run: CONFIGURATION=release ./scripts/build-macos.sh
+      - name: Archive app
+        run: ditto -c -k --keepParent 'dist/Footage Record.app' dist/FootageRecord-macOS-development.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macOS-development
+          path: dist/FootageRecord-macOS-development.zip
+  windows-capture-check:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S apps/windows -B build/windows -A x64
+      - name: Build capture check
+        run: cmake --build build/windows --config Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windows-capture-check
+          path: build/windows/Release/FootageRecordCaptureCheck.exe
