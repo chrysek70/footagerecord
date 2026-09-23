@@ -17,15 +17,17 @@ jobs:
         with:
           name: macOS-development
           path: dist/FootageRecord-macOS-development.zip
-  windows-capture-check:
+  windows:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - name: Configure
         run: cmake -S apps/windows -B build/windows -A x64
-      - name: Build capture check
+      - name: Build app
         run: cmake --build build/windows --config Release
+      - name: Test recording rules
+        run: ctest --test-dir build/windows -C Release --output-on-failure
       - uses: actions/upload-artifact@v4
         with:
-          name: Windows-capture-check
-          path: build/windows/Release/FootageRecordCaptureCheck.exe
+          name: Windows-development
+          path: build/windows/Release/FootageRecord.exe

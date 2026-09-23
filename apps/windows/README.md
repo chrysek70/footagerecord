@@ -1,8 +1,13 @@
-# Windows capture foundation
+# Footage Record for Windows
 
-This is an **engineering capture check**, not the finished Windows recorder. It opens the native window/display picker, receives real D3D11 capture surfaces, counts frames, follows source size changes, and stops on source closure. It does not yet encode MP4 or capture audio.
+First working version: choose a window or screen in the Windows picker, count down (Esc cancels), record, stop from the tray icon or the window, and get an MP4 in `Videos\Footage Record`.
 
-The executable requests `asInvoker` and statically links the MSVC runtime. It has no third-party runtime or driver dependency and can be run from a user-owned folder. Clean standard-user installation and capture still need Windows testing.
+- Capture: Windows.Graphics.Capture. Frames are converted and scaled on the GPU (D3D11 video processor) and encoded with the Media Foundation hardware H.264 encoder at up to 30 fps.
+- Size: the source's own pixels, never scaled up. Sources larger than 4096×2304 are scaled down to fit H.264.
+- Files: written to a hidden-named temp file, checked for a real duration, then renamed; never overwrites.
+- Not yet: sound (app/computer audio and microphone), settings, global hotkey, styled UI, installer and signing.
+
+The executable requests `asInvoker`, statically links the MSVC runtime and needs no installer or administrator rights.
 
 ## Build
 
@@ -11,11 +16,8 @@ Use Visual Studio 2022 or newer with Desktop development with C++, CMake, and a 
 ```powershell
 cmake -S apps/windows -B build/windows -A x64
 cmake --build build/windows --config Release
-& build/windows/Release/FootageRecordCaptureCheck.exe
+ctest --test-dir build/windows -C Release
+& build/windows/Release/FootageRecord.exe
 ```
 
-## Next vertical slice
-
-Add Media Foundation H.264/AAC output, WASAPI endpoint and microphone capture, a common QPC media clock, bounded audio mixing, and temp-file finalization. Then reuse the Mac product flow. Do not present this harness as a downloadable consumer recorder.
-
-The repository includes a Windows CI build job. It has not run until the project is pushed to a GitHub repository with Actions enabled. Hardware capture cannot be validated by a headless compilation job.
+GitHub Actions builds and tests it on every push; download `Windows-development` from the run's artifacts.

@@ -2,7 +2,7 @@
 
 Choose a window or screen. Record. Get an MP4.
 
-Native desktop implementation has started. The macOS development preview records a chosen window or screen to MP4 through ScreenCaptureKit; window recordings have been verified end to end on this Mac. Whole-screen recording stalled after a few frames because the capture queue depth was set to 3; that setting has been removed, and a real screen recording in the app still needs a retest. Microphone recording is still untested. The Windows folder contains a native capture diagnostic, not a finished recorder.
+Native desktop implementation has started. The macOS development preview records a chosen window or screen to MP4 through ScreenCaptureKit; window recordings have been verified end to end on this Mac. Whole-screen recording stalled after a few frames because the capture queue depth was set to 3; that setting has been removed, and a real screen recording in the app still needs a retest. Microphone recording is still untested. The Windows app records video (no sound yet) and awaits its first test on a real PC.
 
 ## Run the Mac preview
 
@@ -30,7 +30,7 @@ The second command builds a separate synthetic window with animation and an opti
 
 ## Windows
 
-[Native capture check and build instructions](apps/windows/README.md). It selects a source and inspects real D3D11 frames; MP4/audio implementation is still pending. A CI workflow is included but has not been run remotely.
+[First working version and build instructions](apps/windows/README.md): pick a window or screen, record, stop from the tray, get an H.264 MP4. No sound yet. Built and tested by GitHub Actions; not yet run on a real Windows PC.
 
 ## About
 
