@@ -2,7 +2,7 @@
 
 Choose a window or screen. Record. Get an MP4.
 
-Native desktop implementation has started. The macOS development preview records a chosen window or screen to MP4 through ScreenCaptureKit; window recordings have been verified end to end on this Mac. Whole-screen recording stalled after a few frames because the capture queue depth was set to 3; that setting has been removed, and a real screen recording in the app still needs a retest. Microphone recording is still untested. The Windows app records video (no sound yet) and awaits its first test on a real PC.
+Native desktop implementation has started. The macOS development preview records a chosen window or screen to MP4 through ScreenCaptureKit; window recordings have been verified end to end on this Mac. Whole-screen recording stalled after a few frames because the capture queue depth was set to 3; that setting has been removed, and a real screen recording in the app still needs a retest. Microphone recording is still untested. The Windows app records video and sound and awaits its first test on a real PC.
 
 ## Run the Mac preview
 
@@ -30,7 +30,7 @@ The second command builds a separate synthetic window with animation and an opti
 
 ## Windows
 
-[First working version and build instructions](apps/windows/README.md): pick a window or screen, record, stop from the tray, get an H.264 MP4. No sound yet. Built and tested by GitHub Actions; not yet run on a real Windows PC.
+[First working version and build instructions](apps/windows/README.md): pick a window or screen, record with app/computer sound and optional microphone, stop from the tray, get an H.264/AAC MP4. Built and tested by GitHub Actions; not yet run on a real Windows PC.
 
 ## About
 
