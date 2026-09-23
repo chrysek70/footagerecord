@@ -1,4 +1,5 @@
 // Checks the recording rules that don't need a capture device. Returns non-zero on failure.
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -31,7 +32,7 @@ int main() {
     EXPECT(Elapsed(65) == L"01:05");
     EXPECT(Elapsed(3661) == L"1:01:01");
     EXPECT(Elapsed(-1) == L"00:00");
-    EXPECT(Elapsed(0.0 / 0.0) == L"00:00");
+    EXPECT(Elapsed(std::nan("")) == L"00:00");
 
     std::printf(failures ? "%d failure(s)\n" : "All recording rule tests passed\n", failures);
     return failures ? 1 : 0;

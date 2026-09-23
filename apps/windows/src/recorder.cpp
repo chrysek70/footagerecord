@@ -260,7 +260,7 @@ void Recorder::Finish() {
         check_hresult(MFCreateSourceReaderFromURL(file_.c_str(), nullptr, reader.put()));
         PROPVARIANT value;
         PropVariantInit(&value);
-        check_hresult(reader->GetPresentationAttribute(MF_SOURCE_READER_MEDIASOURCE, MF_PD_DURATION, &value));
+        check_hresult(reader->GetPresentationAttribute(static_cast<DWORD>(MF_SOURCE_READER_MEDIASOURCE), MF_PD_DURATION, &value));
         duration_ = value.uhVal.QuadPart / 1e7;
         PropVariantClear(&value);
         if (duration_ <= 0) throw hresult_error(E_FAIL, L"No video frames were recorded. Try choosing the source again.");
